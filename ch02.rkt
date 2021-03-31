@@ -13,6 +13,23 @@
     (f (apply g args)))
   the-composition)
 
+(module+ test
+  (require rackunit)
+
+  (test-case
+    "compose"
+    [check-equal?
+      ((compose (λ (x) (list 'foo x))
+                (λ (x) (list 'bar x)))
+       'z)
+      '(foo (bar z))]
+
+    [check-equal?
+      ((compose-b (λ (x) (list 'foo x))
+                  (λ (x) (list 'bar x)))
+       'z)
+      '(foo (bar z))]))
+
 (define (identity x) x)
 
 (define ((iterate n) f)
@@ -22,10 +39,36 @@
 
 (define (square x) (* x x))
 
+(module+ test
+  (test-case
+    "iterate"
+    (check-equal?
+      (((iterate 3) square) 5)
+      390625)))
+
 (define (parallel-combine h f g)
   (define (the-combination . args)
     (h (apply f args) (apply g args)))
   the-combination)
+
+(module+ test
+  (test-case
+    "parallel-combine"
+    (check-equal? 
+      ((parallel-combine list
+                         (λ (x y z) (list 'foo x y z))
+                         (λ (u v w) (list 'bar u v w)))
+       'a 'b 'c)
+      '((foo a b c) (bar a b c)))
+
+    (check-exn
+      exn:fail?
+      (λ ()
+         ((parallel-combine list
+                            (λ (x y) (list 'foo x y))
+                            (λ (u v w) (list 'bar u v w)))
+          'a 'b 'c 'd 'e)))))
+
 
 (define (spread-combine h f g)
   (let ((n (procedure-arity f)))
@@ -39,14 +82,14 @@
   proc)
 
 (define (assert e)
-  (if e (error "assertion failed") #t))
+  (when (not e) (error "assertion failed")))
 
 
 (define (procedure-arity-min a)
-        (min (procedure-arity a)))
+  (min (procedure-arity a)))
 
 (define (procedure-arity-max a)
-        (max (procedure-arity a)))
+  (max (procedure-arity a)))
 
 
 (define (get-arity proc)
@@ -67,37 +110,6 @@
       (restrict-arity the-combination t))))
 
 (module+ test
-  (require rackunit)
-
-  (test-case
-    "compose"
-    [check-equal?
-      ((compose (λ (x) (list 'foo x))
-                (λ (x) (list 'bar x)))
-       'z)
-      '(foo (bar z))]
-
-    [check-equal?
-      ((compose-b (λ (x) (list 'foo x))
-                  (λ (x) (list 'bar x)))
-       'z)
-      '(foo (bar z))])
-
-  (test-case
-    "iterate"
-    (check-equal?
-      (((iterate 3) square) 5)
-      390625))
-
-  (test-case
-    "parallel-combine"
-    (check-equal? 
-      ((parallel-combine list
-                         (λ (x y z) (list 'foo x y z))
-                         (λ (u v w) (list 'bar u v w)))
-       'a 'b 'c)
-      '((foo a b c) (bar a b c))))
-
   (test-case
     "spread-combine"
     (check-equal?
