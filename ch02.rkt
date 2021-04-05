@@ -2,6 +2,7 @@
 
 (require rackunit)
 (require racket/list)
+(require racket/function)
 
 ; 2.1.1
 (define (compose f g)
@@ -84,27 +85,73 @@
 (define (assert e)
   (when (not e) (error "assertion failed")))
 
+; racket thinks about arity slightly different than MIT/GNU scheme
+;
+; In scheme, procedure-arity returns a dotted pair of min / max arity.
+; https://www.gnu.org/software/mit-scheme/documentation/stable/mit-scheme-ref/Arity.html
+;
+; In racket, procedure-arity returns a normalized-arity structure or a list of values
+; https://docs.racket-lang.org/reference/procedures.html?q=procedure-arity#%28def._%28%28quote._~23~25kernel%29._procedure-arity%29%29
+
+; Since no min/max functions exist, we can re-make them from inspecting the result.
+
+(module+ test
+  (test-case
+    "arity-includes?"
+    (check-true (arity-includes? (procedure-arity list) 0)))
+  (test-case
+    "arity-at-least-value"
+    (check-equal? (arity-at-least-value (procedure-arity list)) 0)))
 
 (define (procedure-arity-min a)
-  (min (procedure-arity a)))
+  (cond 
+    [(arity-at-least? a) (arity-at-least-value a)]
+    [(list? a) (apply min a)]
+    [else a]))
 
 (define (procedure-arity-max a)
-  (max (procedure-arity a)))
+  (cond 
+    [(arity-at-least? a) (arity-at-least-value a)]
+    [(list? a) (apply max a)]
+    [else a]))
+
+(module+ test
+  (let ([f (case-lambda [(x) 0] [(x y) 1])]
+        [g (λ (x y) (list 'foo x y))])
+    (test-case
+      "procedure-arity-min"
+      [check-equal? (procedure-arity-min (procedure-arity list)) 0]
+      [check-equal? (procedure-arity-min (procedure-arity f)) 1]
+      [check-equal? (procedure-arity-min (procedure-arity g)) 2])
+    (test-case
+      "procedure-arity-min"
+      [check-equal? (procedure-arity-max (procedure-arity list)) 0]
+      [check-equal? (procedure-arity-max (procedure-arity f)) 2]
+      [check-equal? (procedure-arity-min (procedure-arity g)) 2])))
 
 
 (define (get-arity proc)
   (or (hash-ref arity-table proc #f)
-      (let ((a (procedure-arity proc))) ;arity not in table
+      (let ([a (procedure-arity proc)]) ;arity not in table
         (assert (eqv? (procedure-arity-min a)
                       (procedure-arity-max a)))
         (procedure-arity-min a))))
 
 (define arity-table (make-weak-hasheqv))
 
+(module+ test
+  (test-case
+    "get-arity"
+    [check-equal? (get-arity list) 0]
+    [check-equal? (get-arity list) 0]
+    [check-equal? (get-arity (λ (x y) (list 'foo x y))) 2]
+    [check-equal? (get-arity (λ (u v w) (list 'bar u v w))) 3]))
+
 (define (spread-combine-with-err h f g)
-  (let ((n (get-arity f)) (m (get-arity g)))
-    (let ((t (+ n m)))
+  (let ([n (get-arity f)] [m (get-arity g)])
+    (let ([t (+ n m)])
       (define (the-combination . args)
+        (assert (= (length args) t))
         (h (apply f (take args n))
            (apply g (drop args n))))
       (restrict-arity the-combination t))))
@@ -118,10 +165,18 @@
                        (λ (u v w) (list 'bar u v w))) 
        'a 'b 'c 'd 'e)
       '((foo a b) (bar c d e)))
+
+    (check-equal?
+      ((spread-combine-with-err list
+                       (λ (x y) (list 'foo x y ))
+                       (λ (u v w) (list 'bar u v w))) 
+       'a 'b 'c 'd 'e)
+      '((foo a b) (bar c d e)))
+
     (check-exn
       exn:fail?
       (λ ()
          ((spread-combine-with-err list
                                    (λ (x y) (list 'foo x y ))
                                    (λ (u v w) (list 'bar u v w))) 
-          'a 'b 'c 'd 'e)))))
+          'a 'b 'c 'd 'e 'extra)))))
