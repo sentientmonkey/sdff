@@ -237,3 +237,89 @@
         exn:fail:user?
         (λ ()
            ((parallel-combine-with-err list fuu g) 'a 'b 'c))])))
+
+; Exercise 2.2
+; In racket's case, procedure-arity works differently with the arity-at-least wrapper.
+; Emulating this behavior was somewhat clunky.
+
+(module+ test
+  (test-case
+    "procedure-arity-min/max"
+    [check-true (arity=? (procedure-arity +) (arity-at-least 0))]
+    [check-equal? (procedure-arity-min (procedure-arity +)) 0]
+    [check-equal? (procedure-arity-max (procedure-arity +)) 0]; here scheme would return #f, not 0
+    [check-true (arity=? (procedure-arity atan) '(1 2))]
+    [check-equal? (procedure-arity-min (procedure-arity atan)) 1]
+    [check-equal? (procedure-arity-max (procedure-arity atan)) 2])
+
+
+  ; Racket has procedure-arity-includes?
+  ; and procedure-arity-mask, which are better utility functions to help out.
+  (test-case
+    "procedure-arity-includes?"
+    [check-true (procedure-arity-includes? + 1)]
+    [check-true (procedure-arity-includes? + 0)]
+    [check-true (procedure-arity-includes? atan 1)]
+    [check-false (procedure-arity-includes? atan 0)])
+
+  (test-case
+    "procedure-arity-mask"
+    [check-equal? (procedure-arity-mask +) -1]
+    [check-equal? (procedure-arity-mask atan) 6]
+    [check-equal? (procedure-arity-mask -) -2]
+    [check-equal? (bitwise-and (procedure-arity-mask atan)
+                               (procedure-arity-mask +)) 6]))
+
+; Using a bitwise check we could hash arity then check when we need it.
+(define (check-mask n m)
+  (not (zero? (bitwise-and n m ))))
+
+(define (check-args mask n)
+  (bitwise-bit-set? mask n))
+
+(define (check-arity-mask f g)
+  (check-mask (procedure-arity-mask f)
+              (procedure-arity-mask g)))
+
+(module+ test
+  (test-case
+    "check-arity-mask"
+    (let ([f (λ (x) x)]
+          [g (λ (x y) (list x y))])
+    [check-false (check-arity-mask f g)]
+    [check-true (check-arity-mask + atan)]
+    [check-true (check-arity-mask + f)]
+    [check-true (check-arity-mask + g)]
+    [check-true (check-arity-mask atan f)]
+    [check-true (check-arity-mask atan g)]
+    [check-false (check-arity-mask f g)])))
+
+; not hashing here, but wouldn't be hard to add.
+(define (compose-with-mask f g)
+  (let ([n (procedure-arity-mask f)]
+        [m (procedure-arity-mask g)])
+    (assert (check-mask n m))
+    (define (the-composition . args)
+      (let ([l (length args)])
+        (assert (check-args n (length args)))
+        (assert (check-args m (length args)))
+        (f (apply g args))))
+    the-composition))
+
+(module+ test
+  (test-case
+    "compose-with-err"
+    (let ([f (λ (x) (list 'foo x))]
+          [g (λ (x) (list 'bar x))]
+          [gee (λ (x y) (list 'bar x y))])
+      [check-equal? ((compose-with-mask f g) 'z) '(foo (bar z))]
+      [check-exn
+        exn:fail:user?
+        (λ ()
+           ((compose-with-mask f g) 'z 'bad))]
+      [check-exn
+        exn:fail:user?
+        (λ ()
+           ((compose-with-mask f gee) 'z))])))
+
+
