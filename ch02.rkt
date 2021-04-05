@@ -63,7 +63,7 @@
       '((foo a b c) (bar a b c)))
 
     (check-exn
-      exn:fail?
+      exn:fail:contract:arity?
       (λ ()
          ((parallel-combine list
                             (λ (x y) (list 'foo x y))
@@ -82,8 +82,9 @@
   (hash-set! arity-table proc nargs)
   proc)
 
+; making this fail with a user error makes it easier to test
 (define (assert e)
-  (when (not e) (error "assertion failed")))
+  (when (not e) (raise-user-error "assertion failed")))
 
 ; racket thinks about arity slightly different than MIT/GNU scheme
 ;
@@ -174,9 +175,65 @@
       '((foo a b) (bar c d e)))
 
     (check-exn
-      exn:fail?
+      exn:fail:user?
       (λ ()
          ((spread-combine-with-err list
                                    (λ (x y) (list 'foo x y ))
                                    (λ (u v w) (list 'bar u v w))) 
           'a 'b 'c 'd 'e 'extra)))))
+
+; Exercise 2.1
+; I'm not sure about scheme, but racket already checks arity when applying args to g.
+; We can add our own check, but this seems silly. Maybe for better error messaging?
+; I ended up fail:user to distingish between the existing contract arity errors.
+(define (compose-with-err f g)
+  (let ([n (get-arity f)]
+        [m (get-arity g)])
+    (assert (eqv? n m))
+    (define (the-composition . args)
+      (assert (eqv? (length args) n))
+      (f (apply g args)))
+    the-composition))
+
+(module+ test
+  (test-case
+    "compose-with-err"
+    (let ([f (λ (x) (list 'foo x))]
+          [g (λ (x) (list 'bar x))]
+          [gee (λ (x y) (list 'bar x y))])
+      [check-equal? ((compose-with-err f g) 'z) '(foo (bar z))]
+      [check-exn
+        exn:fail:user?
+        (λ ()
+           ((compose-with-err f g) 'z 'bad))]
+      [check-exn
+        exn:fail:user?
+        (λ ()
+           ((compose-with-err f gee) 'z))])))
+
+(define (parallel-combine-with-err h f g)
+  (let ([n (get-arity f)]
+        [m (get-arity g)])
+    (assert (eqv? n m))
+    (define (the-combination . args)
+      (assert (= (length args) n))
+      (h (apply f args) (apply g args)))
+    the-combination))
+
+(module+ test
+  (test-case
+    "parallel-combine-with-err"
+    (let ([f (λ (x y z) (list 'foo x y z))]
+          [g (λ (u v w) (list 'bar u v w))]
+          [fuu (λ (x y) (list 'foo x y))])
+      [check-equal? 
+        ((parallel-combine-with-err list f g) 'a 'b 'c)
+        '((foo a b c) (bar a b c)) ]
+      [check-exn
+        exn:fail:user?
+        (λ ()
+           ((parallel-combine-with-err list f g) 'a 'b 'c 'd 'e 'f))]
+      [check-exn
+        exn:fail:user?
+        (λ ()
+           ((parallel-combine-with-err list fuu g) 'a 'b 'c))])))
