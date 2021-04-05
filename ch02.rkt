@@ -71,11 +71,14 @@
           'a 'b 'c 'd 'e)))))
 
 
+(define list-head take)
+(define list-tail drop)
+
 (define (spread-combine h f g)
   (let ((n (procedure-arity f)))
     (define (the-combination . args)
-      (h (apply f (take args n))
-         (apply g (drop args n))))
+      (h (apply f (list-head args n))
+         (apply g (list-tail args n))))
     the-combination))
 
 (define (restrict-arity proc nargs)
@@ -322,4 +325,66 @@
         (λ ()
            ((compose-with-mask f gee) 'z))])))
 
+; Multiple values
+(define (spread-apply f g)
+  (let* ([n (get-arity f)]
+         [m (get-arity g)]
+         [t (+ n m)])
+    (define (the-combination . args)
+      (assert (= (length args) t))
+      (values (apply f (list-head args n))
+              (apply g (list-tail args n))))
+    (restrict-arity the-combination t)))
+
+(define (compose-with-values f g)
+  (define (the-composition . args)
+    (call-with-values (λ () (apply g args))
+      f))
+  (restrict-arity the-composition (get-arity g)))
+
+(module+ test
+  (test-case
+    "combine-with-values"
+    [check-equal? ((compose-with-values (λ (a b)
+                                           (list 'foo a b))
+                                        (λ (x)
+                                           (values (list 'bar x)
+                                                   (list 'baz x))))
+                   'z)
+                  '(foo (bar z) (baz z))]))
+
+(define (spread-combine-with-apply h f g)
+  (compose-with-values h (spread-apply f g)))
+
+(module+ test
+  (test-case
+    "spread-combine-with-apply"
+    [check-equal? ((spread-combine-with-apply list
+                                             (λ (x y) (list 'foo x y))
+                                             (λ (u v w) (list 'bar u v w)))
+                   'a 'b 'c 'd 'e)
+                  '((foo a b) (bar c d e))]))
+
+(define (spread-apply-with-values f g)
+  (let* ([n (get-arity f)]
+         [m (get-arity g)]
+         [t (+ n m)])
+    (define (the-combination . args)
+      (assert (= (length args) t))
+      (let-values ([(fv) (apply f (list-head args n))]
+                   [(gv) (apply g (list-tail args n))])
+        (apply values (append fv gv))))
+    (restrict-arity the-combination t)))
+
+(define (spread-combine-with-values h f g)
+  (compose-with-values h (spread-apply-with-values f g)))
+
+(module+ test
+  (test-case
+    "spread-apply-with-values"
+    [check-equal? ((spread-combine-with-values list
+                                             (λ (x y) (values x y))
+                                             (λ (u v w) (values w v u)))
+                   'a 'b 'c 'd 'e)
+                  '(a b e d c)]))
 
