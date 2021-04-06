@@ -406,3 +406,116 @@
 ;                   'a 'b 'c 'd 'e)
 ;                  '(a b e d c)]))
 
+; Exercise 2.3
+; nope, not gonna
+
+
+(define (list-remove lst index)
+  (let lp ([lst lst] [index index])
+    (if (= index 0)
+      (cdr lst)
+      (cons (car lst) (lp (cdr lst) (- index 1))))))
+
+(define (discard-argument i)
+  (assert (exact-nonnegative-integer? i))
+  (λ (f)
+     (let ([m (+ (get-arity f) 1)])
+       (define (the-combination . args)
+         (assert (= (length args) m))
+         (apply f (list-remove args i)))
+       (assert (< i m))
+       (restrict-arity the-combination m))))
+
+(module+ test
+  (test-case
+  "discard-argument"
+  [check-equal? (((discard-argument 2)
+                  (λ (x y z) (list 'foo x y z)))
+                 'a 'b 'c 'd)
+                '(foo a b d)]))
+
+(define (list-insert lst index value)
+  (let lp ([lst lst] [index index])
+    (if (= index 0)
+      (cons value lst)
+      (cons (car lst) (lp (cdr lst) (- index 1))))))
+
+(define ((curry-argument i) . args)
+  (λ (f)
+     (assert (= (length args) (- (get-arity f) 1)))
+     (λ (x)
+        (apply f (list-insert args i x)))))
+
+(module+ test
+  (test-case
+    "curry-argument"
+    [check-equal? ((((curry-argument 2) 'a 'b 'c)
+                    (λ (x y z w) (list 'foo x y z w)))
+                   'd)
+                  '(foo a b d c)]))
+
+
+(define (make-permutation permspec)
+  (define (the-permuter lst)
+    (map (λ (p) (list-ref lst p))
+         permspec))
+  the-permuter)
+
+(define (permute-arguments . permspec)
+  (let ([permute (make-permutation permspec)])
+    (λ (f)
+       (define (the-combination . args)
+         (apply f (permute args)))
+       (let ([n (get-arity f)])
+         (assert (= n (length permspec)))
+         (restrict-arity the-combination n)))))
+
+(module+ test
+  (test-case
+    "permute-arguments"
+    [check-equal? (((permute-arguments 1 2 0 3)
+                    (λ (x y z w) (list 'foo x y z w)))
+                   'a 'b 'c 'd)
+                  '(foo b c a d)]))
+
+; Exercise 2.4
+; gonna skip multiple return values again...
+
+; Exercise 2.5
+; a.
+; I'm a little unsure if the sequence of values should discard based on values
+; as evaluted or up front. Seems like it should be lazy, so I went with a fold.
+(define (make-discard discardspec)
+  (define (the-discard lst)
+    (foldl (λ (v l) (list-remove l v)) lst
+         discardspec))
+  the-discard)
+
+(module+ test
+  (test-case
+    "make-discard"
+    [check-equal? ((make-discard '(2)) '(a b c d))
+                  '(a b d)]
+    [check-equal? ((make-discard '(2 1)) '(a b c d))
+                  '(a d)]))
+
+(define (discard-argument* . discardspec)
+  (let ([discard (make-discard discardspec)])
+    (λ (f)
+       (define (the-combination . args)
+         (apply f (discard args)))
+       (let ([m (+ (get-arity f) 1)])
+         (assert (< (length discardspec) m))
+         (restrict-arity the-combination m)))))
+
+(module+ test
+  (test-case
+  "discard-argument*"
+  [check-equal? (((discard-argument* 2)
+                  (λ (x y z) (list 'foo x y z)))
+                 'a 'b 'c 'd)
+                '(foo a b d)]
+  [check-equal? (((discard-argument* 2 1)
+                  (λ (x y) (list 'foo x y)))
+                 'a 'b 'c 'd)
+                '(foo a d)]))
