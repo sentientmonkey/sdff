@@ -483,13 +483,35 @@
 
 ; Exercise 2.5
 ; a.
-; I'm a little unsure if the sequence of values should discard based on values
-; as evaluted or up front. Seems like it should be lazy, so I went with a fold.
+
+; list-remove* removes all items given a list of indexes.
+; indexes may be provided out of order.
+(define (list-remove* lst indexes)
+  (let lp ([lst lst]
+           [indexes (sort indexes <)]
+           [index 0])
+    (cond
+      [(empty? lst) lst]
+      [(empty? indexes) lst]
+      [(= index (car indexes))
+       (lp (cdr lst) (cdr indexes) (add1 index))]
+      [else 
+        (cons (car lst) (lp (cdr lst) indexes (add1 index)))])))
+
+(module+ test
+  (test-case
+    "list-remove-*"
+    [check-equal? (list-remove* '(1 2 3) '(0 2))
+                  '(2)])
+    [check-equal? (list-remove* '(1 2 3) '(2 0))
+                  '(2)]
+    [check-equal? (list-remove* '(1 2 3) '())
+                  '(1 2 3)]
+    [check-equal? (list-remove* '(1 2 3) '(4))
+                  '(1 2 3)])
+
 (define (make-discard discardspec)
-  (define (the-discard lst)
-    (foldl (λ (v l) (list-remove l v)) lst
-         discardspec))
-  the-discard)
+  (λ (lst) (list-remove* lst discardspec)))
 
 (module+ test
   (test-case
@@ -507,7 +529,6 @@
        (let ([m (+ (get-arity f) 1)])
          (assert (< (length discardspec) m))
          (restrict-arity the-combination m)))))
-
 (module+ test
   (test-case
   "discard-argument*"
@@ -518,4 +539,8 @@
   [check-equal? (((discard-argument* 2 1)
                   (λ (x y) (list 'foo x y)))
                  'a 'b 'c 'd)
-                '(foo a d)]))
+                '(foo a d)]
+  [check-equal? (((discard-argument* 0 1)
+                  (λ (x y) (list 'foo x y)))
+                 'a 'b 'c 'd)
+                '(foo c d)]))
