@@ -3,6 +3,7 @@
 (require rackunit)
 (require racket/list)
 (require racket/function)
+(require racket/string)
 (require racket/system)
 
 ; 2.1.1
@@ -723,3 +724,41 @@
       [r:check-no-match aba+ "ab"]
       [r:check-no-match aba+ "a"]
       [r:check-match aba+ "abaaa"])))
+
+; Exercise 2.7
+; a. Louis's solution would match the expression, but also match if the expression was not found.
+; b. The r:? extends our langauge and provides a new function without having to change a lot of existing logic.
+; c. This would reduce the size of our regex output and make it easier to read overall.
+
+(define (r:interval . exprs)
+  (string-append "\\{" (string-join exprs ",") "\\}"))
+
+(define (r:repeat-ie min max expr)
+  (define (make-interval . r)
+    (map (λ (n) (if (eq? "" n)
+                      ""
+                      (number->string n)))
+          r))
+  (r:seq
+    expr
+    (apply
+      r:interval
+      (cond [(not max) (make-interval min "")]
+            [(= min max) (make-interval min)]
+            [else (make-interval min max)]))))
+
+(module+ test
+  (test-case
+    "r:repeat-ie"
+    [check-equal? (r:repeat 0 1 (r:quote "a")) "\\(\\(\\(a\\)\\|\\)\\)"]
+    [check-equal? (r:repeat-ie 0 1 (r:quote "a")) "\\(\\(a\\)\\{0,1\\}\\)"]
+    [check-equal? (r:repeat-ie 1 2 (r:quote "a")) "\\(\\(a\\)\\{1,2\\}\\)"]
+    [r:check-match (r:repeat-ie 1 2 (r:quote "a")) "a"]
+    [r:check-match (r:repeat-ie 1 2 (r:quote "a")) "aa"]
+    [r:check-no-match (r:repeat-ie 1 2 (r:quote "a")) "bbc"]
+    [check-equal? (r:repeat-ie 2 2 (r:quote "a")) "\\(\\(a\\)\\{2\\}\\)"]
+    [r:check-no-match (r:repeat-ie 2 2 (r:quote "a")) "a"]
+    [r:check-match (r:repeat-ie 2 2 (r:quote "a")) "aa"]
+    [r:check-no-match (r:repeat-ie 2 2 (r:quote "a")) "bb"]
+    [r:check-match (r:repeat-ie 2 #f (r:quote "a")) "aaaaa"]))
+
