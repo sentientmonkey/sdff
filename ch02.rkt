@@ -544,3 +544,113 @@
                   (λ (x y) (list 'foo x y)))
                  'a 'b 'c 'd)
                 '(foo c d)]))
+
+; 2.2 Regular Expressions
+(define (r:dot) ".")
+(define (r:bol) "^")
+(define (r:eol) "$")
+
+(define (r:seq . exprs)
+  (string-append "\\(" (apply string-append exprs) "\\)"))
+
+(define chars-needing-quoting
+  (list #\. #\[ #\\ #\^ #\$ #\*))
+
+(define (r:quote string)
+  (r:seq
+    (list->string
+      (append-map (λ (char)
+                     (if (memv char chars-needing-quoting)
+                       (list #\\ char)
+                       (list char)))
+                  (string->list string)))))
+
+(module+ test
+  (test-case
+    "r:seq"
+    [check-equal? (r:seq (r:quote "a") (r:dot) (r:quote "c"))
+                  "\\(\\(a\\).\\(c\\)\\)"]))
+
+(define (r:alt . exprs)
+  (if (pair? exprs)
+    (apply r:seq
+           (cons (car exprs)
+                 (append-map (λ (expr)
+                                (list "\\|" expr))
+                             (cdr exprs))))
+    (r:seq)))
+
+(module+ test
+  (test-case
+    "r:alt"
+    [check-equal? (r:alt (r:quote "foo") (r:quote "bar") (r:quote "baz"))
+                  "\\(\\(foo\\)\\|\\(bar\\)\\|\\(baz\\)\\)"]))
+
+(define (r:repeat min max expr)
+  (apply r:seq
+         (append (make-list min expr)
+                 (cond [(not max) (list expr "*")]
+                       [(= max min) '()]
+                       [else
+                         (make-list (- max min)
+                                    (r:alt expr ""))]))))
+
+; !!!
+; (r:repeat 3 5 (r:alt (r:quote "cat") (r:quote "dog")))
+
+
+(define (bracket string procedure)
+  (list->string
+    (append '(#\])
+            (procedure (string->list string))
+            '(#\]))))
+
+(define chars-needing-quoting-in-brackets
+  (list #\] #\^ #\-))
+
+(define (quoted-bracketed-contents members)
+  (define (optional char)
+    (if (memv char members) (list char) '()))
+  (append (optional #\])
+          (remove
+            (λ (c)
+               (memv c chars-needing-quoting-in-brackets))
+            (optional #\^)
+            (optional #\-))))
+
+(define lset= member)
+
+(define (r:char-from string)
+  (case (string-length string)
+    [(0) (r:seq)]
+    [(1) (r:quote string)]
+    [else
+      (bracket string
+               (λ (members)
+                  (if (lset= eqv? '(#\- #\^) members)
+                    '(#\- #\^)
+                    (quoted-bracketed-contents members))))]))
+
+(define (r:char-not-from string)
+  (bracket string
+           (λ (members)
+              (cons #\^ (quoted-bracketed-contents members)))))
+
+(define (bourne-shell-quote-string string)
+  (list->string
+    (append (list #\')
+            (append-map (λ (char)
+                           (if (char=? char #\')
+                             (list #\' #\\ char #\')
+                             (list char)))
+                        (string->list string))
+            (list #\'))))
+
+(define (bourne-shell-grep-command-string expr filename)
+  (string-append "grep -e "
+                 (bourne-shell-quote-string expr)
+                 " "
+                 filename))
+
+(define (write-bourne-shell-grep-command expr filename)
+  (display (bourne-shell-grep-command-string expr filename)))
