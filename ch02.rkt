@@ -3,6 +3,7 @@
 (require rackunit)
 (require racket/list)
 (require racket/function)
+(require racket/system)
 
 ; 2.1.1
 (define (compose f g)
@@ -598,6 +599,14 @@
 ; !!!
 ; (r:repeat 3 5 (r:alt (r:quote "cat") (r:quote "dog")))
 
+(module+ test
+  (test-case
+    "r:repeat"
+    [check-equal? (r:repeat 1 1 (r:quote "a")) "\\(\\(a\\)\\)"]
+    [check-equal? (r:repeat 0 #f (r:quote "a")) "\\(\\(a\\)*\\)"]
+    [check-equal? (r:repeat 1 #f (r:quote "a")) "\\(\\(a\\)\\(a\\)*\\)"]
+    ))
+
 
 (define (bracket string procedure)
   (list->string
@@ -654,3 +663,63 @@
 
 (define (write-bourne-shell-grep-command expr filename)
   (display (bourne-shell-grep-command-string expr filename)))
+
+(define (bourne-shell-grep-command-string-echo expr text)
+  (string-append "echo "
+                 (bourne-shell-quote-string text)
+                 " | grep -e "
+                 (bourne-shell-quote-string expr)))
+
+(define (run-bourne-shell-grep-stdin expr text)
+  (system (bourne-shell-grep-command-string-echo expr text)))
+
+
+(module+ test
+  (define-simple-check (r:check-match expr text)
+    (run-bourne-shell-grep-stdin expr text))
+  (define-simple-check (r:check-no-match expr text)
+    (not (run-bourne-shell-grep-stdin expr text)))
+  (test-case
+    "regexes"
+    (let ([adotc (r:seq (r:quote "a") (r:dot) (r:quote "c"))]
+          [foobarbaz (r:alt (r:quote "foo") (r:quote "bar") (r:quote "baz"))]
+          [catdog (r:repeat 3 5 (r:alt (r:quote "cat") (r:quote "dog")))])
+      [r:check-match adotc "aac"]
+      [r:check-match adotc "abc"]
+      [r:check-match adotc "acc"]
+      [r:check-no-match adotc "bcc"]
+      [r:check-match foobarbaz "foo"]
+      [r:check-match foobarbaz "bar"]
+      [r:check-match foobarbaz "baz"]
+      [r:check-no-match foobarbaz "bat"])))
+
+; Exercise 2.6
+; define r:* and r:+ using r:repeat
+
+(define (r:* expr)
+  (r:repeat 0 #f expr))
+
+(module+ test
+  (test-case
+    "r:*"
+    (let ([aba* (r:seq (r:quote "a")
+                       (r:quote "b")
+                       (r:* (r:quote "a")))])
+      [r:check-match aba* "aba"]
+      [r:check-match aba* "ab"]
+      [r:check-no-match aba* "a"]
+      [r:check-match aba* "abaaa"])))
+
+(define (r:+ expr)
+  (r:repeat 1 #f expr))
+
+(module+ test
+  (test-case
+    "r:+"
+    (let ([aba+ (r:seq (r:quote "a")
+                       (r:quote "b")
+                       (r:+ (r:quote "a")))])
+      [r:check-match aba+ "aba"]
+      [r:check-no-match aba+ "ab"]
+      [r:check-no-match aba+ "a"]
+      [r:check-match aba+ "abaaa"])))
