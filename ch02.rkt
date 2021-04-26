@@ -762,3 +762,62 @@
     [r:check-no-match (r:repeat-ie 2 2 (r:quote "a")) "bb"]
     [r:check-match (r:repeat-ie 2 #f (r:quote "a")) "aaaaa"]))
 
+; 2.3
+
+(define (make-converter input-unit output-unit)
+  (displayln input-unit)
+  (displayln output-unit)
+  #t)
+
+(define (unit-specializer procedure implicit-output-unit
+                          . implicit-input-units)
+  (define (specializer specific-output-unit
+                       . specific-input-units)
+    (let [(output-converter
+            (make-converter implicit-output-unit
+                            specific-output-unit))
+          (input-converters
+            (map make-converter
+                 specific-input-units
+                 implicit-input-units))]
+      (define (specialized-procedure . arguments)
+        (output-converter
+          (apply procedure
+                 (map (λ (converter argument)
+                         (converter argument))
+                      input-converters
+                      arguments))))
+      specialized-procedure))
+  specializer)
+
+
+(define (gas-law-volume pressure temperature amount)
+  (/ (* amount gas-constant temperature) pressure))
+
+(define gas-constant 8.3144621) ; J/(K*mol)
+
+(define (sphere-radius volume)
+  (expt (/ volume (* 4/3 pi)) 1/3))
+
+(define pi (* 4 (atan 1 1)))
+
+(define make-specialized-gas-law-volume
+  (unit-specializer
+    gas-law-volume
+    '(expt meter 3)                     ; output (volume)
+    '(/ newton (expt meter 2))          ; pressure
+    'kelvin                             ; temperature
+    'mole))                             ; amount
+
+(define convential-gas-law-volume
+  (make-specialized-gas-law-volume
+    '(expt inch 3)                      ; output (volume)
+    '(/ pound (expt inch 2))            ; pressure
+    'fahrenheit                         ; temperature
+    'mole))                             ; amount
+
+(module+ test
+  (test-case
+    "sphere-radius"
+    [check-equal? (sphere-radius (convential-gas-law-volume 14.7 68 1))
+                  7.0496246358391]))
